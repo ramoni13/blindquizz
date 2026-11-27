@@ -132,6 +132,9 @@
     }
     #select-bank:focus { outline: none; border-color: var(--gold); }
     #select-bank option { background: #1a1a2e; color: #fff; }
+    .bank-history { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 12px; font-size: 0.95rem; color: var(--text-muted); }
+    .bank-history b { color: var(--gold); }
+    .bank-history-btn { font-size: 0.85rem; padding: 6px 14px; }
     .config-actions { margin-top: 12px; display: flex; gap: 12px; justify-content: center; }
     .rules-list { color: rgba(255,255,255,0.85); line-height: 1.7; font-size: 0.95rem; padding-left: 20px; }
     .rules-list b { color: var(--gold); }
@@ -148,6 +151,25 @@
     }
     .session-info { flex: 1; font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; }
     #session-url-display { word-break: break-all; color: var(--gold); font-size: 1.15rem; font-weight: 700; }
+    .session-qr {
+      display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: zoom-in;
+    }
+    .session-qr .qr-img {
+      width: 150px; height: 150px; background: #fff; border-radius: 10px; padding: 0; overflow: hidden;
+      box-shadow: 0 0 18px rgba(255,215,0,0.35);
+    }
+    .session-qr .qr-img svg, .qr-zoom .qr-img svg { display: block; width: 100%; height: 100%; }
+    .session-qr small { font-size: 0.72rem; color: var(--text-muted); letter-spacing: 1px; text-transform: uppercase; }
+    /* QR agrandi plein écran (pour la salle) */
+    .qr-zoom {
+      position: fixed; inset: 0; z-index: 300; display: none; flex-direction: column; align-items: center; justify-content: center;
+      gap: 18px; background: rgba(5,8,30,0.94); cursor: zoom-out; text-align: center;
+    }
+    .qr-zoom.visible { display: flex; }
+    .qr-zoom .qr-img { width: min(70vh, 80vw); height: min(70vh, 80vw); background: #fff; border-radius: 18px; overflow: hidden; }
+    .qr-zoom .qr-title { font-size: 2rem; font-weight: 900; color: var(--gold); }
+    .qr-zoom .qr-code { font-size: 1.3rem; color: var(--text-muted); }
+    .qr-zoom .qr-code b { color: #fff; letter-spacing: 4px; }
     .session-conn-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .conn-chip { font-size: 0.78rem; padding: 3px 10px; border-radius: 12px; font-weight: 600; }
     .conn-chip.online  { background: rgba(0,200,83,0.2);  color: #00e676; border: 1px solid rgba(0,200,83,0.4); }
@@ -171,6 +193,19 @@
       border-radius: 10px; padding: 14px 28px; display: inline-block; line-height: 1.7;
     }
     .intro-start-btn { font-size: 1.4rem; padding: 18px 48px; border-radius: 50px; animation: pulse-gold 2s infinite; }
+    .intro-actions { display: flex; gap: 18px; align-items: center; justify-content: center; }
+    .intro-actions .btn-secondary { font-size: 1.1rem; padding: 16px 30px; border-radius: 50px; }
+    .intro-bonuses { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-bottom: 28px; }
+    .intro-bonuses:empty { display: none; }
+    .intro-bonus {
+      min-width: 220px; max-width: 300px; padding: 14px 18px; border-radius: 14px;
+      border: 2px solid rgba(255,215,0,0.55); background: rgba(255,215,0,0.08);
+    }
+    .intro-bonus.new { border-color: var(--gold); box-shadow: 0 0 22px rgba(255,215,0,0.45); }
+    .intro-bonus .ib-icon { font-size: 2rem; font-weight: 900; color: var(--gold); }
+    .intro-bonus .ib-name { font-weight: 800; font-size: 1.1rem; margin: 2px 0 4px; }
+    .intro-bonus .ib-desc { font-size: 0.9rem; color: var(--text-muted); line-height: 1.35; }
+    .intro-bonus .ib-new { display: inline-block; margin-left: 6px; font-size: 0.7rem; font-weight: 900; letter-spacing: 1px; background: var(--gold); color: #000; padding: 1px 6px; border-radius: 6px; vertical-align: middle; }
 
     /* ===== GAME LAYOUT ===== */
     .game-layout { display: flex; flex: 1; gap: 0; overflow: hidden; }
@@ -244,6 +279,12 @@
     .status-chip.stopped { background: rgba(229,57,53,0.15); border-color: rgba(229,57,53,0.6); }
     .status-chip.stopped .st-label { color: #ff5252; font-weight: 900; letter-spacing: 1px; }
     .status-chip.out { opacity: 0.4; }
+    .st-bonus, .vchip-bonus {
+      display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 6px; font-size: 0.75rem;
+      font-weight: 900; background: var(--gold); color: #000; vertical-align: middle; line-height: 1.5;
+    }
+    .vchip-bonus.fifty { background: #00b0ff; color: #000; }
+    .vchip-bonus.spy { background: #7c4dff; color: #fff; }
 
     /* ===== VERIFY ===== */
     .verify-card {
@@ -471,12 +512,13 @@
     .confirm-actions { display: flex; gap: 12px; justify-content: center; }
     .confirm-actions .btn { min-width: 130px; font-size: 1rem; }
 
-    /* Bouton provisoire : redémarrer la partie */
-    .btn-restart {
-      position: fixed; top: 8px; right: 8px; z-index: 250; padding: 4px 10px; font-size: 0.75rem; font-weight: 700;
-      color: #fff; background: rgba(198,40,40,0.75); border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; opacity: 0.55;
+    /* Bouton « Redémarrer » : en bas à gauche, dans la barre d'actions de chaque écran de jeu */
+    .btn.btn-restart {
+      padding: 8px 14px; font-size: 0.85rem; color: #fff;
+      background: rgba(198,40,40,0.55); border: 1px solid rgba(255,255,255,0.25); opacity: 0.8;
     }
-    .btn-restart:hover { opacity: 1; }
+    .btn.btn-restart:hover { opacity: 1; background: rgba(198,40,40,0.9); }
+    .intro-actions .btn.btn-restart { font-size: 0.85rem; padding: 8px 14px; border-radius: 8px; }
 
     /* Toast d'erreur */
     #toast {
@@ -542,10 +584,14 @@
         <div class="session-code-box" id="session-code-display">——</div>
       </div>
       <div class="session-info">
-        <div style="font-size:0.8rem;">Les capitaines se connectent depuis leur smartphone :</div>
+        <div style="font-size:0.8rem;">Les capitaines se connectent depuis leur smartphone (scannez le QR code ou ouvrez le lien) :</div>
         <div id="session-url-display"></div>
         <div id="session-conn-status" style="margin-top:4px;"></div>
         <div class="session-conn-list" id="session-conn-list"></div>
+      </div>
+      <div class="session-qr" onclick="openQrZoom()" title="Cliquer pour agrandir le QR code">
+        <div class="qr-img" id="session-qr"></div>
+        <small>🔍 Agrandir</small>
       </div>
     </div>
   </div>
@@ -556,6 +602,10 @@
       <label for="select-bank">Questionnaire à jouer :</label>
       <select id="select-bank" onchange="selectBank(this.value)"></select>
     </div>
+    <div class="bank-history">
+      <span id="bank-history-text"></span>
+      <button class="btn btn-secondary bank-history-btn" id="btn-history-clear" onclick="clearHistory()">♻ Tout remettre en jeu</button>
+    </div>
   </div>
 
   <div class="config-panel">
@@ -563,7 +613,7 @@
     <div class="teams-grid" id="teams-grid"></div>
   </div>
 
-  <div class="config-panel">
+  <!--<div class="config-panel">
     <h2>Règles</h2>
     <ul class="rules-list">
       <li><b>4 manches</b>, cibles <b>25</b>, <b>50</b>, <b>75</b> puis <b>100</b>. Chaque réponse est un chiffre de <b>0 à 9</b>.</li>
@@ -576,9 +626,10 @@
         <b>+ 1 « rapidité »</b> pour l'équipe exacte la plus rapide.</li>
       <li><b>Dépassement</b> : dès que la jauge d'une équipe dépasse la cible, elle ne marque <b>plus aucun point</b> (ni valeur, ni précision, ni rapidité). La piste s'arrête à la cible + 5 ; au-delà, le cumul est affiché à côté du nom.</li>
       <li><b>Bilan de fin de manche</b> : <b>pile sur la cible = +10</b> · <b>en dessous = +10 moins l'écart</b> (cible 25, jauge 22 : 10 − 3 = <b>+7</b> ; jamais moins de 0) · <b>au-dessus = on perd le dépassement</b> (jauge 28 : <b>−3</b>).</li>
+      <li><b>Bonus</b> (cumulés, chacun utilisable <b>1 fois par manche</b>) : manche 2 : le <b>50-50</b> éteint la moitié du clavier (0–4 ou 5–9) qui ne contient pas la bonne réponse · manche 3 : l'<b>Espion</b> montre en direct la réponse de chaque équipe adverse qui a déjà répondu (elles sont prévenues) · manche 4, la finale : le <b>×2</b> double les points de la question où il est joué.</li>
       <li><b>Classement</b> : total des points de toutes les manches. Égalité : moins de dépassements, puis plus de « pile », puis plus de réponses exactes.</li>
     </ul>
-  </div>
+  </div>-->
 
   <div class="config-actions">
     <button class="btn btn-secondary" onclick="openRules()">📖 Règles</button>
@@ -594,7 +645,12 @@
   <div class="intro-divider"></div>
   <div class="intro-description" id="intro-description"></div>
   <div class="intro-points" id="intro-points"></div>
-  <button class="btn btn-primary intro-start-btn" onclick="api('/api/round/begin')">Jouer ▶</button>
+  <div class="intro-bonuses" id="intro-bonuses"></div>
+  <div class="intro-actions">
+    <button class="btn btn-restart" onclick="restartGame()" title="Remettre les scores à zéro et revenir à la configuration">🔄 Redémarrer</button>
+    <button class="btn btn-secondary" id="btn-intro-bonuses" onclick="showRoundBonuses()">🎁 Voir les bonus</button>
+    <button class="btn btn-primary intro-start-btn" onclick="api('/api/round/begin')">Jouer ▶</button>
+  </div>
 </div>
 
 <!-- ============================= GAME ============================= -->
@@ -619,6 +675,7 @@
   </div>
   <div class="game-bar">
     <span class="progress-indicator" id="game-progress"></span>
+    <button class="btn btn-restart" onclick="restartGame()" title="Remettre les scores à zéro et revenir à la configuration">🔄 Redémarrer</button>
     <button class="btn btn-secondary" id="btn-force" onclick="forceNext()">⏩ Forcer</button>
     <button class="btn btn-primary" id="btn-next-question" onclick="nextQuestion()">Question suivante ▶</button>
   </div>
@@ -670,6 +727,7 @@
   </div>
   <div class="game-bar">
     <span class="progress-indicator" id="verify-progress"></span>
+    <button class="btn btn-restart" onclick="restartGame()" title="Remettre les scores à zéro et revenir à la configuration">🔄 Redémarrer</button>
     <button class="btn btn-primary" id="btn-verify-next" onclick="verifyNext()">Suivant ▶</button>
   </div>
 </div>
@@ -684,7 +742,7 @@
         <thead>
           <tr>
             <th>Équipe</th><th class="num">Cumul réel</th><th class="num">Bilan (cible)</th>
-            <th class="num">Jauge + précision + rapidité</th><th class="num">Score de manche</th>
+            <th class="num">Points des questions</th><th class="num">Score de manche</th>
           </tr>
         </thead>
         <tbody id="round-tbody"></tbody>
@@ -701,6 +759,7 @@
   </div>
   <div class="game-bar">
     <span class="progress-indicator" id="roundend-progress"></span>
+    <button class="btn btn-restart" onclick="restartGame()" title="Remettre les scores à zéro et revenir à la configuration">🔄 Redémarrer</button>
     <button class="btn btn-primary" id="btn-round-next" onclick="api('/api/round/next')">Manche suivante ▶</button>
   </div>
 </div>
@@ -757,10 +816,17 @@
   </div>
 </div>
 
-<button id="btn-restart" class="btn-restart" style="display:none" onclick="restartGame()" title="Remettre les scores à zéro et relancer une partie (provisoire)">🔄 Redémarrer</button>
 
 <div id="toast"></div>
 
+<!-- QR code agrandi (projeté pour la salle) -->
+<div class="qr-zoom" id="qr-zoom" onclick="closeQrZoom()">
+  <div class="qr-title">📱 Scannez pour rejoindre la partie</div>
+  <div class="qr-img" id="qr-zoom-img"></div>
+  <div class="qr-code">Code partie : <b id="qr-zoom-code"></b> · cliquez pour fermer</div>
+</div>
+
+<script src="/qr.js"></script>
 <script src="/admin.js"></script>
 <script src="/rules.js"></script>
 </body>

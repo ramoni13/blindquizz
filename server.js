@@ -282,6 +282,36 @@ const TARGETS = [25, 50, 75, 100];
 const ROUND_COUNT = TARGETS.length;
 const EXACT_TARGET_BONUS = 10;
 
+// Bonus d'équipe : chacun apparaît à partir d'une manche (index 0 = manche 1) puis reste
+// disponible aux manches suivantes. Chaque bonus est utilisable une fois par manche.
+const BONUSES = [
+  { id: 'fifty', fromRound: 1, icon: '50/50', name: 'Le 50-50', short: 'Éteint la moitié du clavier qui ne contient pas la bonne réponse' },
+  { id: 'spy',   fromRound: 2, icon: '🕵️',    name: 'L\'Espion', short: 'Montre en direct les réponses des autres équipes' },
+  { id: 'x2',    fromRound: 3, icon: '×2',    name: 'Le ×2',    short: 'Double les points de la question où il est joué' }
+];
+
+function roundBonuses(idx) {
+  return BONUSES.filter(b => b.fromRound <= idx);
+}
+
+// Petit hachage déterministe (FNV-1a 32 bits) : sert à masquer l'indice du 50-50
+function fnv(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h >>> 0;
+}
+
+// Indice 50-50 envoyé discrètement au téléphone avec la question : un nombre aléatoire en base 36
+// dont le bit de poids faible, combiné à un masque dérivé du playerId, de la manche et de la question,
+// donne la moitié du clavier à garder (0 = 0-4, 1 = 5-9). Simple brouillage : rien n'est visible
+// à l'écran, mais ce n'est pas du chiffrement (l'information est sur le téléphone, par conception).
+function fiftyToken(answer, playerId, roundIdx, num) {
+  const half = answer <= 4 ? 0 : 1;
+  const mask = fnv(`${playerId}:${roundIdx}:${num}`) & 1;
+  const noise = Math.floor(Math.random() * 0x3fffffff);
+  return (((noise << 1) | (half ^ mask)) >>> 0).toString(36);
+}
+
 // Contrôle au démarrage, pour chaque questionnaire : 100 questions, réponses entières 0–9, 10 par chiffre
 (function checkQuestions() {
   const errors = [];
@@ -326,6 +356,7 @@ function sessionQuestions() {
     deck: [questionIdx...], deckPos, exhausted,
     round: 0..3,
     rounds: [{ target, participants: [teamId], questions: [{ qIdx, openedAt,
+               shownAt: { [teamId]: ms },   // 1er envoi de la question au téléphone (départ du chrono)
                answers: { [teamId]: { value, ms, forced } } }],
                stopped: { [teamId]: questionPosInRound }, verifyPos, results }],
     totals: { [teamId]: { score, overs, exactTargets, exactAnswers } }
@@ -436,6 +467,8 @@ function emptyTotals() {
  *      écart de 2 ou plus  : 0 point (idem estimation forcée par l'animateur)
  *      rapidité            : +1 à l'équipe exacte la plus rapide (réponses non
  *                            forcées)
+ *  - Bonus ×2 (manche 4) : les points de la question où il est
+ *    joué sont doublés (valeur + précision + rapidité). 0 point × 2 = 0.
  *  - Une équipe dont la jauge dépasse la cible (y compris à la question qui la
  *    fait dépasser) ne marque plus aucun point par question : ni valeur de la
  *    bonne réponse, ni précision, ni rapidité. L'équipe la plus rapide est
@@ -453,7 +486,7 @@ function endOfRoundAdjust(cumul, target) {
 function computeRoundResults(round, questions) {
   const teams = {};
   round.participants.forEach(t => {
-    teams[t] = { cumul: 0, precision: 0, speed: 0, exactAnswers: 0, answered: 0, gained: 0 };
+    teams[t] = { cumul: 0, precision: 0, speed: 0, x2Extra: 0, exactAnswers: 0, answered: 0, gained: 0 };
   });
 
   const detail = [];
@@ -484,15 +517,18 @@ function computeRoundResults(round, questions) {
       const precision = (over || !close) ? 0 : (diff === 0 ? 3 : 1);
       let speed = 0;
       if (!over && t === fastest) speed = 1;
-      const gain = (over || !close) ? 0 : answer + precision + speed;
+      const base = (over || !close) ? 0 : answer + precision + speed;
+      const x2 = !!a.x2;                                // bonus ×2 joué sur cette question
+      const gain = x2 ? base * 2 : base;
       s.precision += precision;
       s.speed += speed;
+      s.x2Extra += gain - base;
       s.gained += gain;
       s.answered += 1;
       if (exact && !over) s.exactAnswers += 1;
       entries[t] = {
         value: a.value, ms: a.ms, forced: !!a.forced,
-        precision, speed, exact, near, gain, over,
+        precision, speed, exact, near, gain, over, x2, fifty: !!a.fifty, spy: !!a.spy,
         fastest: t === fastest,
         cumul: s.cumul
       };
@@ -578,10 +614,45 @@ function newRound(idx) {
     participants: session.teams.map(t => t.id),
     questions: [],
     stopped: {},
+    bonusUsed: {},          // { [teamId]: { [bonusId]: n° de question (1..) } }
     verifyPos: 0,
     results: null,
     exhausted: false
   };
+}
+
+// ── Historique des questions posées (par questionnaire, conservé d'une partie à l'autre
+//    tant que le serveur tourne) ──
+
+function askedSet() {
+  session.asked = session.asked || {};
+  return new Set(session.asked[session.bank] || []);
+}
+
+function markAsked(qIdx) {
+  const set = askedSet();
+  set.add(qIdx);
+  session.asked[session.bank] = [...set];
+}
+
+function freshCount() {
+  return sessionQuestions().length - askedSet().size;
+}
+
+// Pioche de la partie : d'abord les questions jamais posées (mélangées), puis les déjà vues
+// (mélangées) en complément si la partie va jusque-là. Quand tout a été posé, un nouveau
+// cycle commence (historique remis à zéro pour ce questionnaire).
+function buildDeck() {
+  const all = sessionQuestions().map((_, i) => i);
+  let asked = askedSet();
+  if (asked.size >= all.length) {
+    session.asked[session.bank] = [];
+    asked = new Set();
+    console.log(`[SERVER] Questionnaire « ${session.bank} » entièrement posé : nouveau cycle`);
+  }
+  const fresh = shuffle(all.filter(i => !asked.has(i)));
+  const seen = shuffle(all.filter(i => asked.has(i)));
+  return fresh.concat(seen);
 }
 
 function openNextQuestion() {
@@ -592,8 +663,37 @@ function openNextQuestion() {
     enterVerifying();
     return;
   }
-  r.questions.push({ qIdx: session.deck[session.deckPos++], openedAt: Date.now(), answers: {} });
+  const qIdx = session.deck[session.deckPos++];
+  markAsked(qIdx);
+  r.questions.push({ qIdx, openedAt: Date.now(), shownAt: {}, answers: {} });
   session.phase = 'answering';
+}
+
+// Vérifie qu'un bonus peut être joué sur la question en cours (idempotent : rejouer
+// le même bonus sur la même question est accepté, par exemple après un 50-50 déjà enregistré).
+function checkBonus(round, teamId, bonusId) {
+  if (!roundBonuses(session.round).some(b => b.id === bonusId)) fail('Bonus indisponible dans cette manche');
+  const used = (round.bonusUsed[teamId] || {})[bonusId];
+  if (used && used !== round.questions.length) fail('Bonus déjà utilisé dans cette manche');
+}
+
+function useBonus(round, teamId, bonusId) {
+  round.bonusUsed[teamId] = round.bonusUsed[teamId] || {};
+  round.bonusUsed[teamId][bonusId] = round.questions.length;
+}
+
+// Espion : réponses déjà données par chacune des autres équipes (réponses forcées exclues)
+function spyReport(round, q, teamId) {
+  const others = activeTeams(round).filter(t => t !== teamId);
+  const answers = others
+    .filter(t => q.answers[t] && !q.answers[t].forced)
+    .sort((x, y) => q.answers[x].at - q.answers[y].at)                 // dans l'ordre d'arrivée
+    .map(t => ({ name: teamById(t).name, value: q.answers[t].value }));
+  return {
+    answers,                                                           // [{ name, value }]
+    count: answers.length,                                             // équipes espionnées
+    total: others.length                                               // autres équipes en jeu
+  };
 }
 
 function revealableQuestions(round) {
@@ -655,6 +755,8 @@ function adminView() {
     phase: session.phase,
     bank: session.bank,
     banks: bankList(),
+    freshCount: freshCount(),          // questions jamais posées dans ce questionnaire
+    askedCount: askedSet().size,
     teams: session.teams.map(t => ({ id: t.id, name: t.name, connected: !!session.connected[t.id] })),
     round: session.round,
     roundCount: ROUND_COUNT,
@@ -666,6 +768,9 @@ function adminView() {
     roundScores: roundScoresByTeam(),
     canEditTeams: session.phase === 'lobby' || session.phase === 'roundEnd'
   };
+
+  view.bonuses = roundBonuses(session.round);              // bonus de la manche (intro, règles)
+  view.newBonus = BONUSES.find(b => b.fromRound === session.round) || null;
 
   if (r) {
     view.participants = r.participants.filter(t => teamById(t));
@@ -682,7 +787,13 @@ function adminView() {
       else statuses[t.id] = 'thinking';
     });
     const pending = pendingTeams();
+    const bonusNow = {};      // bonus joués sur la question en cours (n'indique rien sur la réponse)
+    Object.keys(r.bonusUsed).forEach(t => {
+      const used = Object.keys(r.bonusUsed[t]).filter(b => r.bonusUsed[t][b] === r.questions.length);
+      if (used.length) bonusNow[t] = used;
+    });
     view.current = {
+      bonusNow,
       num: r.questions.length,
       text: sessionQuestions()[q.qIdx].text,
       statuses,             // jamais les valeurs pendant la phase de réponses
@@ -732,7 +843,8 @@ function playerView(teamId, playerId) {
     teams: session.teams.map(t => ({ id: t.id, name: t.name, taken: !!session.connected[t.id] })),
     round: session.round,
     roundCount: ROUND_COUNT,
-    target: r ? r.target : TARGETS[0]
+    target: r ? r.target : TARGETS[0],
+    bonuses: roundBonuses(session.round).map(b => ({ id: b.id, name: b.name }))
   };
 
   const team = teamId ? teamById(teamId) : null;
@@ -755,7 +867,34 @@ function playerView(teamId, playerId) {
     const q = curQuestion();
     const a = q.answers[team.id];
     me.question = { num: r.questions.length, text: sessionQuestions()[q.qIdx].text };   // jamais la réponse
-    me.answered = a ? { value: a.value, forced: !!a.forced } : null;
+    me.answered = a ? { value: a.value, forced: !!a.forced, x2: !!a.x2 } : null;
+    // Bonus : disponibles (non encore utilisés dans la manche) et déjà joués sur cette question
+    const used = r.bonusUsed[team.id] || {};
+    me.bonuses = roundBonuses(session.round).map(b => ({
+      id: b.id, icon: b.icon, name: b.name,
+      usedAt: used[b.id] || null,                       // n° de question où il a été joué
+      now: used[b.id] === r.questions.length             // joué sur la question en cours
+    }));
+    // 50-50 : indice brouillé envoyé avec la question (uniquement au téléphone de l'équipe,
+    // tant que le bonus est disponible ou joué sur cette question) → activation sans aller-retour.
+    if (me.isMe && !a && roundBonuses(session.round).some(b => b.id === 'fifty')
+        && (!used.fifty || used.fifty === r.questions.length)) {
+      me.question.k = fiftyToken(sessionQuestions()[q.qIdx].answer, playerId, session.round, r.questions.length);
+    }
+    // Espion actif sur cette question : réponses des autres équipes, mises à jour en direct
+    if (me.isMe && used.spy === r.questions.length) me.spy = spyReport(r, q, team.id);
+    // Équipes espionnées : prévenues dès que l'Espion est joué, avant même de répondre
+    // (une réponse forcée n'est pas montrée à l'espion : pas d'alerte dans ce cas).
+    if (!a || !a.forced) {
+      me.spiedBy = Object.keys(r.bonusUsed)
+        .filter(t => t !== team.id && r.bonusUsed[t].spy === r.questions.length && teamById(t))
+        .map(t => teamById(t).name);
+    }
+    // Chrono propre à l'équipe : démarre la première fois que la question est envoyée
+    // au téléphone connecté de l'équipe (et jamais remis à zéro, même si la page est rechargée).
+    if (me.isMe && !a && r.stopped[team.id] === undefined && q.shownAt[team.id] === undefined) {
+      q.shownAt[team.id] = Date.now();
+    }
   }
 
   if ((session.phase === 'roundEnd' || session.phase === 'final') && r && r.results && r.results[team.id]) {
@@ -783,9 +922,12 @@ const routes = {
     const names = Array.isArray(body.teams) && body.teams.length ? body.teams : ['Équipe 1', 'Équipe 2', 'Équipe 3', 'Équipe 4'];
     const teams = names.map((n, i) => ({ id: 't' + (i + 1), name: cleanName(n, 'Équipe ' + (i + 1)) }));
     const bank = QUESTION_BANKS[body.bank] ? body.bank : DEFAULT_BANK;
+    // « Nouveau code de partie » : l'historique des questions posées est conservé
+    const asked = (session && session.asked) || {};
     session = {
       code: genCode(),
       bank,
+      asked,                 // { [bank]: [qIdx…] } questions déjà posées dans les parties précédentes
       teams,
       nextTeamId: teams.length + 1,
       connected: {},
@@ -799,6 +941,16 @@ const routes = {
     };
     console.log(`[SERVER] Session créée : ${session.code} — ${teams.length} équipes`);
     return { code: session.code };
+  },
+
+  // ── Oublie les questions déjà posées du questionnaire choisi (nouveau public)
+  'POST /api/history/clear': () => {
+    requireSession();
+    if (session.phase !== 'lobby') fail('Possible uniquement avant le début de la partie');
+    session.asked = session.asked || {};
+    session.asked[session.bank] = [];
+    console.log(`[SERVER] Historique des questions effacé (${session.bank})`);
+    return { ok: true };
   },
 
   // ── Choix du questionnaire (avant le début de la partie uniquement)
@@ -873,14 +1025,14 @@ const routes = {
     requireSession();
     if (session.phase !== 'lobby') fail('La partie est déjà commencée');
     if (session.teams.length < 2) fail('Il faut au moins 2 équipes');
-    session.deck = shuffle(sessionQuestions().map((_, i) => i));
+    session.deck = buildDeck();
     session.deckPos = 0;
     session.exhausted = false;
     session.round = 0;
     session.totals = Object.fromEntries(session.teams.map(t => [t.id, emptyTotals()]));
     session.rounds = [newRound(0)];
     session.phase = 'intro';
-    console.log('[SERVER] Partie démarrée');
+    console.log(`[SERVER] Partie démarrée (${freshCount()} question(s) jamais posée(s) sur ${sessionQuestions().length})`);
     return { ok: true };
   },
 
@@ -917,9 +1069,36 @@ const routes = {
     if (q.answers[teamId]) fail('Réponse déjà enregistrée');
     const value = Number(body.value);
     if (!Number.isInteger(value) || value < 0 || value > 9) fail('Réponse invalide (0 à 9)');
-    const ms = Date.now() - q.openedAt;
-    q.answers[teamId] = { value, ms, forced: false };
-    return { ok: true, ms, estimated: estimatedCumul(r, teamId) };
+    // Bonus joués avec la réponse (×2) ou juste avant (50-50, déjà enregistré ou envoyé ici en secours)
+    const wanted = Array.isArray(body.bonuses) ? body.bonuses.map(String) : [];
+    wanted.forEach(b => checkBonus(r, teamId, b));
+    wanted.forEach(b => useBonus(r, teamId, b));
+    const used = r.bonusUsed[teamId] || {};
+    const num = r.questions.length;
+    // Temps mesuré depuis l'envoi de la question au téléphone de l'équipe
+    // (repli sur l'ouverture de la question si l'envoi n'a pas été enregistré).
+    const start = q.shownAt[teamId] !== undefined ? q.shownAt[teamId] : q.openedAt;
+    const ms = Date.now() - start;
+    q.answers[teamId] = { value, ms, at: Date.now(), forced: false, x2: used.x2 === num, fifty: used.fifty === num, spy: used.spy === num };
+    return { ok: true, ms, estimated: estimatedCumul(r, teamId), x2: used.x2 === num };
+  },
+
+  // ── Bonus joué avant la réponse (50-50) : le téléphone éteint déjà le clavier localement ;
+  //    cet appel l'enregistre (pour que le bonus soit consommé même sans réponse ensuite).
+  'POST /api/bonus': (body) => {
+    const teamId = requirePlayer(body);
+    if (session.phase !== 'answering') fail('Pas de question en cours');
+    const r = curRound();
+    const q = curQuestion();
+    if (!r.participants.includes(teamId)) fail('Votre équipe rejoindra la prochaine manche');
+    if (r.stopped[teamId] !== undefined) fail('Vous êtes arrêtés pour cette manche');
+    if (q.answers[teamId]) fail('Réponse déjà enregistrée');
+    const bonus = String(body.bonus || '');
+    if (bonus !== 'fifty' && bonus !== 'spy') fail('Ce bonus se joue avec la réponse');
+    checkBonus(r, teamId, bonus);
+    useBonus(r, teamId, bonus);
+    console.log(`[SERVER] ${teamById(teamId).name} : bonus ${bonus} à la question ${r.questions.length}`);
+    return { ok: true };
   },
 
   // ── STOP définitif pour la manche
@@ -1014,6 +1193,9 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/admin.js') {
     return serveFile(res, path.join(ROOT, 'admin.js'), 'text/javascript');
   }
+  if (pathname === '/qr.js') {
+    return serveFile(res, path.join(ROOT, 'qr.js'), 'text/javascript');
+  }
   if (pathname === '/rules.js') {
     return serveFile(res, path.join(ROOT, 'rules.js'), 'text/javascript');
   }
@@ -1061,4 +1243,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { QUESTIONS, QUESTION_BANKS, TARGETS, computeRoundResults, rankTeams, server };
+module.exports = { QUESTIONS, QUESTION_BANKS, TARGETS, BONUSES, fnv, computeRoundResults, rankTeams, server };

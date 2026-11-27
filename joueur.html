@@ -179,6 +179,49 @@
       box-shadow: 0 0 14px rgba(255,215,0,0.4);
     }
     .key.zero { grid-column: 2; }
+    .key.off { opacity: 0.12; pointer-events: none; transform: scale(0.9); border-style: dashed; }
+
+    /* ── Bonus ── */
+    .bonus-bar { display: flex; gap: 10px; margin-bottom: 12px; }
+    .bonus-btn {
+      flex: 1; padding: 10px 6px; border-radius: 12px; cursor: pointer;
+      border: 2px solid rgba(255,215,0,0.55); background: rgba(255,215,0,0.1);
+      color: var(--gold); font-weight: 900; font-size: 1rem; line-height: 1.15;
+      transition: all 0.15s;
+    }
+    .bonus-btn small { display: block; font-size: 0.7rem; font-weight: 600; color: var(--muted); letter-spacing: 0.5px; }
+    .bonus-btn .bi { font-size: 1.35rem; }
+    .bonus-btn.armed { background: var(--gold); color: #000; box-shadow: 0 0 18px rgba(255,215,0,0.7); }
+    .bonus-btn.armed small { color: rgba(0,0,0,0.7); }
+    .bonus-btn.used { opacity: 0.35; border-style: dashed; cursor: not-allowed; }
+    .bonus-btn.active { background: rgba(0,200,83,0.2); border-color: var(--green); color: #69f0ae; cursor: default; }
+    .spy-box {
+      margin-bottom: 12px; padding: 10px 12px; border-radius: 12px; text-align: center;
+      background: rgba(124,77,255,0.18); border: 2px solid #7c4dff;
+    }
+    .spy-box .spy-title { font-size: 0.75rem; letter-spacing: 1px; text-transform: uppercase; color: #b39ddb; font-weight: 700; }
+    .spy-list { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 8px 0 6px; }
+    .spy-chip {
+      display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px 4px 10px; border-radius: 10px;
+      background: rgba(0,0,0,0.3); border: 1px solid rgba(179,157,219,0.5); max-width: 100%;
+    }
+    .spy-chip .spy-name { font-size: 0.85rem; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .spy-chip b { min-width: 30px; padding: 2px 0; border-radius: 7px; background: #7c4dff; color: #fff; font-size: 1.25rem; font-weight: 900; }
+    .spy-wait { font-size: 2rem; font-weight: 900; color: #fff; line-height: 1.2; }
+    .spy-box .spy-sub { font-size: 0.8rem; color: var(--muted); }
+    .spied-notice {
+      margin-top: 12px; padding: 8px 12px; border-radius: 10px; font-weight: 700; font-size: 0.9rem;
+      background: rgba(124,77,255,0.2); border: 1px solid #7c4dff; color: #d1c4e9;
+    }
+    .spied-alert {
+      margin-bottom: 12px; padding: 10px 12px; border-radius: 12px; text-align: center;
+      font-weight: 800; font-size: 0.95rem; color: #fff;
+      background: linear-gradient(135deg, #7c4dff, #4a148c); border: 2px solid #b388ff;
+      box-shadow: 0 0 18px rgba(124,77,255,0.6); animation: spied-pulse 1.4s ease-in-out infinite;
+    }
+    .spied-alert small { display: block; font-weight: 600; font-size: 0.78rem; opacity: 0.85; margin-top: 2px; }
+    @keyframes spied-pulse { 0%,100% { box-shadow: 0 0 10px rgba(124,77,255,0.5); } 50% { box-shadow: 0 0 26px rgba(179,136,255,0.95); } }
+    .answered-bonus { display: inline-block; margin-top: 4px; padding: 3px 12px; border-radius: 10px; background: var(--gold); color: #000; font-weight: 900; }
 
     .stop-btn {
       margin-top: 14px;
@@ -319,6 +362,9 @@
     <div class="card">
       <div class="question-num" id="question-num"></div>
       <div class="question-label" id="question-label"></div>
+      <div class="spied-alert" id="spied-alert" style="display:none;"></div>
+      <div class="bonus-bar" id="bonus-bar" style="display:none;"></div>
+      <div class="spy-box" id="spy-box" style="display:none;"></div>
       <div class="keypad" id="keypad"></div>
       <button class="btn btn-green" id="btn-submit" onclick="submitAnswer()" disabled>Choisissez un chiffre</button>
       <div id="answer-error" class="error-msg"></div>
@@ -333,6 +379,7 @@
       <div class="phase-title">Réponse envoyée</div>
       <div class="big-value" id="answered-value"></div>
       <div class="phase-sub" id="answered-sub">Attendez la question suivante…</div>
+      <div class="spied-notice" id="spied-notice" style="display:none;"></div>
     </div>
   </div>
 
@@ -588,7 +635,10 @@ function applyState(sess, me) {
     case 'intro':
       setText('watch-title', `Manche ${sess.round + 1}`);
       setText('watch-sub', me.participant
-        ? `Objectif : approcher ${sess.target} sans le dépasser. Regardez l'écran !`
+        ? `Objectif : approcher ${sess.target} sans le dépasser.`
+          + (sess.bonuses && sess.bonuses.length
+            ? ` Bonus disponibles (1 fois chacun) : ${sess.bonuses.map(b => b.name).join(', ')}.` : '')
+          + ' Regardez l\'écran !'
         : 'Votre équipe entrera en jeu à la prochaine manche.');
       showState('watch');
       break;
@@ -601,11 +651,8 @@ function applyState(sess, me) {
         break;
       }
       if (me.answered) {
-        setText('answered-value', me.answered.value);
-        setText('answered-sub', me.answered.forced
-          ? 'Temps écoulé : estimation 0 enregistrée par l\'animateur.'
-          : 'Attendez la question suivante…');
-        showState('answered');
+        showAnswered(me.answered.value, me.answered.forced, me.answered.x2);
+        showSpied(me.spiedBy);
         break;
       }
       {
@@ -614,6 +661,7 @@ function applyState(sess, me) {
           currentKey = key;
           renderQuestion(me.question);
         }
+        syncBonuses(me);
         showState('answering');
       }
       break;
@@ -660,7 +708,18 @@ function rankLabel(rank) {
 // QUESTION + PAVÉ NUMÉRIQUE
 // ======================================================================
 
+// État des bonus pour la question affichée
+let curQuestion = null;     // { num, text, k }
+let bonusState = [];        // [{ id, icon, name, usedAt, now }] (dernier état serveur)
+let x2Armed = false;        // ×2 sélectionné, envoyé avec la réponse
+let fiftyOn = false;        // 50-50 appliqué sur cette question (clavier réduit)
+
+const BONUS_HINT = { x2: 'points ×2', fifty: 'demi-clavier', spy: 'espionner' };
+
 function renderQuestion(q) {
+  curQuestion = q;
+  x2Armed = false;
+  fiftyOn = false;
   setText('question-num', `QUESTION ${q.num}`);
   setText('question-label', q.text);
   hideError('answer-error');
@@ -672,6 +731,135 @@ function renderQuestion(q) {
   updateSubmit();
 }
 
+// Met à jour les bonus à chaque état reçu, sans redessiner la question
+function syncBonuses(me) {
+  bonusState = me.bonuses || [];
+  if (me.question && me.question.k !== undefined) curQuestion.k = me.question.k;
+  // 50-50 déjà joué sur cette question (ex. page rechargée) : réappliquer le clavier réduit
+  const f = bonusState.find(b => b.id === 'fifty');
+  if (f && f.now && !fiftyOn) applyFifty();
+  renderBonusBar();
+  renderSpy(me.spy);
+  renderSpiedAlert(me.spiedBy);
+}
+
+// Alerte avant de répondre : une ou plusieurs équipes ont joué l'Espion sur cette question
+function renderSpiedAlert(names) {
+  const el = document.getElementById('spied-alert');
+  if (!names || !names.length) { el.style.display = 'none'; el.dataset.sig = ''; return; }
+  const html = `🕵️ ${escHtml(names.join(', '))} ${names.length > 1 ? 'vous espionnent' : 'vous espionne'} !`
+    + '<small>Votre réponse sera visible dès que vous l\'aurez validée… à vous de jouer (ou de bluffer) !</small>';
+  el.style.display = 'block';
+  if (el.dataset.sig !== html) {
+    el.dataset.sig = html;
+    el.innerHTML = html;
+    if (navigator.vibrate) navigator.vibrate(200);
+  }
+}
+
+// Espion : réponses déjà données par chacune des autres équipes, en direct
+function renderSpy(spy) {
+  const box = document.getElementById('spy-box');
+  if (!spy) { box.style.display = 'none'; box.dataset.sig = ''; return; }
+  const list = spy.answers.length
+    ? '<div class="spy-list">' + spy.answers.map(a =>
+      `<span class="spy-chip"><span class="spy-name">${escHtml(a.name)}</span><b>${a.value}</b></span>`).join('') + '</div>'
+    : '<div class="spy-wait">…</div>';
+  const html = '<div class="spy-title">🕵️ Espion · réponses des autres équipes</div>' + list
+    + `<div class="spy-sub">${spy.count === 0
+      ? 'Personne n\'a encore répondu : patientez… mais pas trop !'
+      : `${spy.count} équipe(s) sur ${spy.total} ont répondu · mise à jour en direct`}</div>`;
+  box.style.display = 'block';
+  if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; }
+}
+
+function renderBonusBar() {
+  const bar = document.getElementById('bonus-bar');
+  if (!bonusState.length) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  bar.style.display = 'flex';
+  const html = bonusState.map(b => {
+    let cls = '', sub = BONUS_HINT[b.id] || '';
+    if (b.id === 'x2' && x2Armed) { cls = 'armed'; sub = 'activé ✓'; }
+    else if (b.id === 'fifty' && fiftyOn) { cls = 'active'; sub = 'appliqué ✓'; }
+    else if (b.id === 'spy' && b.now) { cls = 'active'; sub = 'en cours 👀'; }
+    else if (b.usedAt) { cls = 'used'; sub = `utilisé (Q${b.usedAt})`; }
+    return `<button class="bonus-btn ${cls}" onclick="tapBonus('${b.id}')"><span class="bi">${b.icon}</span><small>${sub}</small></button>`;
+  }).join('');
+  if (bar.dataset.sig !== html) { bar.dataset.sig = html; bar.innerHTML = html; }   // pas de recréation à chaque interrogation
+}
+
+function tapBonus(id) {
+  const b = bonusState.find(x => x.id === id);
+  if (!b || sending) return;
+  if (id === 'x2') {
+    if (b.usedAt) return;
+    x2Armed = !x2Armed;                       // choix libre jusqu'à la validation de la réponse
+    renderBonusBar(); updateSubmit();
+    return;
+  }
+  if (id === 'fifty') {
+    if (fiftyOn || b.usedAt) return;
+    openModal({
+      icon: '✂️',
+      title: 'Jouer le 50-50 ?',
+      msg: 'La moitié du clavier qui ne contient pas la bonne réponse va s\'éteindre. Utilisable une seule fois dans la manche.',
+      labelOk: '50-50 !',
+      onOk: playFifty
+    });
+  }
+  if (id === 'spy') {
+    if (b.usedAt) return;
+    openModal({
+      icon: '🕵️',
+      title: 'Jouer l\'Espion ?',
+      msg: 'Vous verrez en direct la réponse de chaque équipe adverse sur cette question. Les équipes espionnées seront prévenues… Utilisable une seule fois dans la manche.',
+      labelOk: 'Espionner !',
+      onOk: playSpy
+    });
+  }
+}
+
+async function playSpy() {
+  const res = await apiPost('/api/bonus', { teamId: player.teamId, playerId: player.playerId, bonus: 'spy' });
+  if (res.error) { showError('answer-error', res.error); return; }
+  poll();                                        // récupère tout de suite la moyenne
+}
+
+// 50-50 : appliqué tout de suite grâce à l'indice reçu avec la question, puis signalé au serveur
+function playFifty() {
+  if (!curQuestion || curQuestion.k === undefined) { showError('answer-error', 'Bonus indisponible pour cette question'); return; }
+  applyFifty();
+  renderBonusBar();
+  apiPost('/api/bonus', { teamId: player.teamId, playerId: player.playerId, bonus: 'fifty' })
+    .then(res => { if (res.error) showError('answer-error', res.error); });
+}
+
+function fiftyHalf() {
+  // Décodage de l'indice : bit de poids faible XOR masque (même calcul que le serveur)
+  const bit = parseInt(curQuestion.k, 36) & 1;
+  const mask = fnv(`${player.playerId}:${lastState.sess.round}:${curQuestion.num}`) & 1;
+  return bit ^ mask;                           // 0 → garder 0-4, 1 → garder 5-9
+}
+
+function applyFifty() {
+  if (!curQuestion || curQuestion.k === undefined) return;
+  const keepHigh = fiftyHalf() === 1;
+  fiftyOn = true;
+  document.querySelectorAll('.key').forEach(btn => {
+    const v = Number(btn.dataset.v);
+    const off = keepHigh ? v <= 4 : v >= 5;
+    btn.classList.toggle('off', off);
+    if (off && pendingValue === v) { pendingValue = null; btn.classList.remove('selected'); }
+  });
+  updateSubmit();
+}
+
+function fnv(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h >>> 0;
+}
+
 function selectKey(v) {
   pendingValue = v;
   document.querySelectorAll('.key').forEach(b => b.classList.toggle('selected', Number(b.dataset.v) === v));
@@ -681,22 +869,45 @@ function selectKey(v) {
 function updateSubmit() {
   const btn = document.getElementById('btn-submit');
   btn.disabled = pendingValue === null || sending;
-  btn.textContent = pendingValue === null ? 'Choisissez un chiffre' : `✅ Valider « ${pendingValue} »`;
+  btn.textContent = pendingValue === null ? 'Choisissez un chiffre'
+    : `✅ Valider « ${pendingValue} »${x2Armed ? ' avec ×2' : ''}`;
 }
 
 async function submitAnswer() {
   if (pendingValue === null || sending) return;
   sending = true;
   updateSubmit();
-  const res = await apiPost('/api/answer', { teamId: player.teamId, playerId: player.playerId, value: pendingValue });
+  const bonuses = [];
+  if (x2Armed) bonuses.push('x2');
+  if (fiftyOn) bonuses.push('fifty');           // secours si l'appel /api/bonus n'est pas passé
+  const res = await apiPost('/api/answer', { teamId: player.teamId, playerId: player.playerId, value: pendingValue, bonuses });
   sending = false;
   updateSubmit();
   if (res.error) { showError('answer-error', res.error); poll(); return; }
-  setText('answered-value', pendingValue);
-  setText('answered-sub', 'Attendez la question suivante…');
+  showAnswered(pendingValue, false, res.x2);
+  showSpied(null);
   setText('cumul-value', res.estimated);
-  showState('answered');
   poll();
+}
+
+function showAnswered(value, forced, x2) {
+  document.getElementById('answered-value').innerHTML = escHtml(value)
+    + (x2 ? '<br><span class="answered-bonus">×2 joué</span>' : '');
+  setText('answered-sub', forced
+    ? 'Temps écoulé : estimation 0 enregistrée par l\'animateur.'
+    : 'Attendez la question suivante…');
+  showState('answered');
+}
+
+function showSpied(names) {
+  const el = document.getElementById('spied-notice');
+  if (!names || !names.length) { el.style.display = 'none'; return; }
+  el.textContent = `🕵️ Vous êtes espionnés par ${names.join(', ')} !`;
+  el.style.display = 'block';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // ======================================================================

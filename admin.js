@@ -166,7 +166,6 @@ function render() {
     teamsSig = '';
     if (started) { started = false; toast('Session introuvable (serveur redémarré ?)'); }
     showScreen('accueil');
-    $('btn-restart').style.display = 'none';
     return;
   }
   if (!started && S.phase === 'lobby') { showScreen('accueil'); return; }
@@ -176,7 +175,6 @@ function render() {
   if (S.phase !== 'answering') lastQuestionKey = null;
   renderScoreboard();
   renderTeamsConfig();
-  $('btn-restart').style.display = S.phase === 'lobby' ? 'none' : '';
   const screen = PHASE_SCREEN[S.phase];
   switch (S.phase) {
     case 'lobby': renderSessionPanel(); renderBankSelect(); break;
@@ -202,9 +200,18 @@ function playerUrl() {
   return `${origin}/joueur?code=${S.code}`;
 }
 
+let qrUrl = '';
 function renderSessionPanel() {
+  const url = playerUrl();
   $('session-code-display').textContent = S.code;
-  $('session-url-display').textContent = playerUrl();
+  $('session-url-display').textContent = url;
+  if (url !== qrUrl && window.QR) {          // QR régénéré seulement si le lien change
+    qrUrl = url;
+    const svg = QR.svg(url);
+    $('session-qr').innerHTML = svg;
+    $('qr-zoom-img').innerHTML = svg;
+    $('qr-zoom-code').textContent = S.code;
+  }
   const n = S.teams.filter(t => t.connected).length;
   $('session-conn-status').textContent = `${n} / ${S.teams.length} équipe(s) connectée(s)`;
   $('session-conn-list').innerHTML = S.teams.map(t =>
@@ -225,12 +232,35 @@ function renderBankSelect() {
     ).join('');
   }
   if (document.activeElement !== sel && sel.value !== S.bank) sel.value = S.bank;
+
+  // Questions déjà posées dans les parties précédentes (même session)
+  const total = S.freshCount + S.askedCount;
+  const txt = S.askedCount === 0
+    ? `Toutes les questions sont neuves (<b>${total}</b>).`
+    : `<b>${S.freshCount}</b> question(s) jamais posée(s) sur ${total} — elles sortiront en premier.`
+      + (S.freshCount < 60 ? ' Les déjà vues compléteront si besoin.' : '');
+  if ($('bank-history-text').innerHTML !== txt) $('bank-history-text').innerHTML = txt;
+  $('btn-history-clear').style.display = S.askedCount ? '' : 'none';
+}
+
+function clearHistory() {
+  showConfirm({
+    icon: '♻',
+    title: 'Remettre toutes les questions en jeu ?',
+    message: 'Les questions déjà posées pourront ressortir dès la prochaine partie. Utile avec un nouveau public.',
+    labelOk: 'Remettre en jeu',
+    onOk: () => api('/api/history/clear')
+  });
 }
 
 function selectBank(bank) {
   if (!S || bank === S.bank) return;
   api('/api/bank/select', { bank });
 }
+
+function openQrZoom() { if (qrUrl) $('qr-zoom').classList.add('visible'); }
+function closeQrZoom() { $('qr-zoom').classList.remove('visible'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeQrZoom(); });
 
 function renderTeamsConfig() {
   const sig = JSON.stringify([S.canEditTeams, S.teams]);
@@ -322,6 +352,32 @@ function renderIntro() {
   $('intro-points').innerHTML =
     'Jauge : + valeur de la bonne réponse · Points : <b>exact +3</b> · <b>±1 : +1</b> · <b>plus loin : 0</b> · <b>⚡ +1</b> la plus rapide<br>'
     + `Au-dessus de ${S.target} : <b>plus aucun point</b> · Bilan : pile <b>+10</b> · en dessous <b>+10 − écart</b> · au-dessus <b>−dépassement</b>`;
+
+  // Bonus de la manche (cumulés depuis la manche 2), présentés avant de jouer
+  const bonuses = S.bonuses || [];
+  const newId = S.newBonus ? S.newBonus.id : null;
+  const html = bonuses.length
+    ? bonuses.map(b => `<div class="intro-bonus${b.id === newId ? ' new' : ''}">`
+      + `<div class="ib-icon">${escHtml(b.icon)}</div>`
+      + `<div class="ib-name">${escHtml(b.name)}${b.id === newId ? '<span class="ib-new">NOUVEAU</span>' : ''}</div>`
+      + `<div class="ib-desc">${escHtml(b.short)} · 1 fois dans la manche</div></div>`).join('')
+    : '';
+  if ($('intro-bonuses').innerHTML !== html) $('intro-bonuses').innerHTML = html;
+  $('btn-intro-bonuses').style.display = bonuses.length ? '' : 'none';
+
+  // Première arrivée sur l'intro d'une manche qui apporte un nouveau bonus : diaporama automatique
+  const key = S.code + '-' + S.round;
+  if (newId && introBonusShown !== key) {
+    introBonusShown = key;
+    showRoundBonuses();
+  }
+}
+
+let introBonusShown = null;
+
+function showRoundBonuses() {
+  if (!S || !S.bonuses || !S.bonuses.length) return;
+  openBonuses(S.bonuses, S.newBonus ? [S.newBonus.id] : []);
 }
 
 // ======================================================================
@@ -349,10 +405,12 @@ function renderGame() {
     el.classList.add('animate-in');
   }
 
+  const BONUS_TAG = { x2: '×2', fifty: '50/50', spy: '🕵️ espion' };
   $('status-grid').innerHTML = S.teams.map(t => {
     const st = c.statuses[t.id] || 'out';
+    const tags = ((c.bonusNow || {})[t.id] || []).map(b => `<span class="st-bonus">${BONUS_TAG[b] || b}</span>`).join('');
     return `<div class="status-chip ${st}">
-      <span class="st-name">${escHtml(t.name)}${t.connected ? '' : ' 📵'}</span>
+      <span class="st-name">${escHtml(t.name)}${t.connected ? '' : ' 📵'}${tags}</span>
       <span class="st-label">${STATUS_LABEL[st]}</span>
     </div>`;
   }).join('');
@@ -509,9 +567,12 @@ function chipHtml(tid, o = {}) {
   const sq = (o.sq !== undefined && o.sq !== null)
     ? `<span class="vchip-sq ${o.sqCls || ''}"${o.title ? ` title="${escHtml(o.title)}"` : ''}>${o.sq}</span>` : '';
   const small = o.small ? `<small>${o.small}</small>` : '';
+  const tags = (o.spy ? '<span class="vchip-bonus spy" title="Espion joué">🕵️</span>' : '')
+    + (o.fifty ? '<span class="vchip-bonus fifty" title="50-50 joué">50/50</span>' : '')
+    + (o.x2 ? `<span class="vchip-bonus" title="×2 joué : ${o.gain || 0} pt">×2${o.gain ? ' = ' + o.gain : ''}</span>` : '');
   return `<span class="vchip${o.over ? ' busted' : ''}">`
     + `<span class="vchip-dot" style="background:${teamColor(tid)}"></span>`
-    + `<span class="vchip-name">${escHtml(teamName(tid))}</span>${small}${sq}</span>`;
+    + `<span class="vchip-name">${escHtml(teamName(tid))}</span>${tags}${small}${sq}</span>`;
 }
 
 function buildPlan(v, i) {
@@ -555,7 +616,10 @@ function buildPlan(v, i) {
   const B = tids.filter(t => E[t].near).sort(byMs);
   const W = tids.filter(t => !E[t].exact && !E[t].near).sort((a, b) => (E[a].forced - E[b].forced) || byMs(a, b));
   const C = tids.filter(t => E[t].fastest);
-  const item = (group, t, o) => ({ group, tid: t, gain: E[t].gain, html: chipHtml(t, { ...o, over: E[t].over }) });
+  const item = (group, t, o) => ({
+    group, tid: t, gain: E[t].gain,
+    html: chipHtml(t, { ...o, over: E[t].over, x2: E[t].x2, fifty: E[t].fifty, spy: E[t].spy, gain: E[t].gain })
+  });
   const a = A.map(t => item('a', t, { small: fmtMs(E[t].ms) }));
   const b = B.map(t => item('b', t, { sq: E[t].value, sqCls: 'near', title: 'Réponse donnée' }));
   const c = C.map(t => item('c', t, {
@@ -624,7 +688,7 @@ function renderVerifyCard(v, i) {
   $('verify-card').innerHTML = `<div class="verify-card">
     <div class="vq-text"><span style="color:var(--text-muted);font-size:1rem;">QUESTION ${i} / ${v.total}</span><br>${escHtml(q.text)}
       ${q.explanation ? `<div class="vq-expl">${escHtml(q.explanation)}</div>` : ''}
-      <div class="vq-pts">La jauge de toutes les équipes avance de ${q.answer}. Points : exact ${q.answer}+3 · à 1 près ${q.answer}+1 · plus loin 0 · au-dessus de la cible 0.</div></div>
+      <div class="vq-pts">La jauge de toutes les équipes avance de ${q.answer}. Points : exact ${q.answer}+3 · à 1 près ${q.answer}+1 · plus loin 0 · au-dessus de la cible 0${(S.bonuses || []).some(b => b.id === 'x2') ? ' · ×2 : points doublés' : ''}.</div></div>
     <div class="verify-answer">${q.answer}</div></div>`;
 }
 
@@ -913,7 +977,8 @@ function renderRoundEnd() {
     const bilan = r.over
       ? `<span class="cancelled">${sgn(r.adjust)}</span> <small>(dépasse de ${-r.gap})</small>`
       : r.exactTarget ? '<b>+10</b>' : `${sgn(r.adjust)} <small>(écart ${r.gap})</small>`;
-    const gained = `${r.gained} <small style="color:var(--text-muted)">(jauge ${r.cumul} + préc. ${r.precision} + rapid. ${r.speed})</small>`;
+    const x2 = r.x2Extra ? ` + ×2 ${r.x2Extra}` : '';
+    const gained = `${r.gained} <small style="color:var(--text-muted)">(valeurs ${r.gained - r.precision - r.speed - (r.x2Extra || 0)} + préc. ${r.precision} + rapid. ${r.speed}${x2})</small>`;
     return `<tr class="${cls}">
       <td>${r.exactTarget ? '🎯 ' : r.over ? '💥 ' : ''}${escHtml(teamName(r.tid))}</td>
       <td class="num">${r.cumul}${r.over ? ' <span class="cancelled">&gt; ' + S.target + '</span>' : ''}</td>

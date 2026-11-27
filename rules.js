@@ -255,33 +255,154 @@
           + [25, 50, 75, 100].map((t, i) =>
             `<div class="rl-card pile" style="--k:${i};border-color:var(--y)"><h3>Manche ${i + 1}</h3><div class="rl-pts">🎯 ${t}</div></div>`).join('')
           + '</div>')
-        + el(3, 'L\'équipe avec <b>le plus de points</b> gagne 🏆', 'rl-caption'),
+        + el(3, 'Dès la manche 2, des <b>bonus</b> s\'ajoutent (à découvrir)<span class="sub">L\'équipe avec le plus de points gagne 🏆</span>', 'rl-caption'),
       run: null
     }
   ];
 
   // ======================================================================
+  // SLIDES DES BONUS (présentés avant les manches 2, 3, 4…)
+  // ======================================================================
+
+  const keypadHtml = (prefix, extra = '') =>
+    '<div class="rl-keypad">' + [1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map(k =>
+      `<div class="rl-key${k === 0 ? ' zero' : ''}" id="${prefix}-${k}">${k}</div>`).join('') + '</div>' + extra;
+
+  const BONUS_SLIDES = {
+    x2: [
+      {
+        html: () => head('Finale · nouveau bonus', 'Le <span class="gold">×2</span>')
+          + el(2, '<div class="rl-row">'
+            + '<div class="rl-phone"><div class="rl-phone-q">Combien de couleurs dans un sachet de M&amp;M\'s ?</div>'
+            + '<div class="rl-bonusbar"><div class="rl-bbtn" id="bx-btn"><b>×2</b><small>points ×2</small></div></div>'
+            + keypadHtml('bxk')
+            + '<div class="rl-phone-ok" id="bx-ok">✅ Valider « <span id="bx-okv">?</span> »<span id="bx-okx"></span></div></div>'
+            + '<div class="rl-bignum">×2<small>1 fois par manche</small></div></div>')
+          + el(3, 'Sûrs de vous ? Touchez <b>×2</b> avant de <b>valider</b> votre réponse', 'rl-caption'),
+        async run(w) {
+          await w(1400); on('bxk-6', 'sel'); $r('bx-okv').textContent = '6';
+          await w(1000); on('bx-btn', 'armed'); $r('bx-btn').querySelector('small').textContent = 'activé ✓';
+          $r('bx-okx').textContent = ' avec ×2'; on('bx-ok', 'ready');
+          await w(1300); $r('bx-ok').innerHTML = '✔ Réponse envoyée · ×2 joué';
+        }
+      },
+      {
+        html: () => head('Le ×2', 'Les <span class="green">points</span> de la question<br>sont <span class="gold">doublés</span>')
+          + el(2, '<div class="rl-cards">'
+            + '<div class="rl-card under" style="--k:0"><h3>🎯 Exact</h3><div class="rl-gauge-ex">6 <span>+ 3</span></div><div class="rl-pts">9 → 18</div><div class="rl-formula">jackpot !</div></div>'
+            + '<div class="rl-card pile" style="--k:1"><h3>± 1</h3><div class="rl-gauge-ex">6 <span>+ 1</span></div><div class="rl-pts">7 → 14</div><div class="rl-formula">ça double aussi</div></div>'
+            + '<div class="rl-card over" style="--k:2"><h3>❌ Raté</h3><div class="rl-gauge-ex">0 <span>pt</span></div><div class="rl-pts">0 × 2 = 0</div><div class="rl-formula">bonus <b>perdu</b></div></div>'
+            + '</div>')
+          + el(3, 'De quoi <b>renverser le classement</b> ! La jauge n\'est pas doublée · au-dessus de la cible : 0 × 2 = 0', 'rl-caption'),
+        run: null
+      }
+    ],
+    fifty: [
+      {
+        html: () => head('Nouveau bonus', 'Le <span class="gold">50-50</span>')
+          + el(2, '<div class="rl-row">'
+            + '<div class="rl-phone"><div class="rl-phone-q">Combien de pattes a une araignée ?</div>'
+            + '<div class="rl-bonusbar"><div class="rl-bbtn" id="bf-btn"><b>50/50</b><small>demi-clavier</small></div></div>'
+            + keypadHtml('bfk')
+            + '</div>'
+            + '<div class="rl-bignum">½<small>la moitié s\'éteint</small></div></div>')
+          + el(3, 'Le clavier garde <b>0 à 4</b> ou <b>5 à 9</b> : la bonne réponse est <b>dans la moitié qui reste</b>', 'rl-caption'),
+        async run(w) {
+          await w(1500); on('bf-btn', 'active'); $r('bf-btn').querySelector('small').textContent = 'appliqué ✓';
+          await w(500);
+          for (const k of [0, 1, 2, 3, 4]) { on('bfk-' + k, 'off'); await w(120); }
+          await w(900); on('bfk-8', 'sel');
+        }
+      },
+      {
+        html: () => head('Le 50-50', 'Instantané<br>et <span class="gold">bien caché</span>')
+          + el(2, '<div class="rl-cards">'
+            + '<div class="rl-card pile" style="--k:0"><h3>⚡ Immédiat</h3><div class="rl-pts">0 s</div><div class="rl-formula">le clavier s\'éteint <b>tout de suite</b></div></div>'
+            + '<div class="rl-card under" style="--k:1"><h3>🤫 Discret</h3><div class="rl-pts">👀</div><div class="rl-formula">la moitié gardée n\'apparaît <b>que sur votre téléphone</b></div></div>'
+            + '<div class="rl-card over" style="--k:2"><h3>☝️ Une fois</h3><div class="rl-pts">1 / manche</div><div class="rl-formula">même si vous ne répondez pas ensuite</div></div>'
+            + '</div>')
+          + el(3, 'Il <b>se combine</b> avec les bonus des manches suivantes 😈', 'rl-caption'),
+        run: null
+      }
+    ],
+    spy: [
+      {
+        html: () => head('Nouveau bonus', 'L\'<span class="gold">Espion</span> 🕵️')
+          + el(2, '<div class="rl-row">'
+            + '<div class="rl-phone"><div class="rl-phone-q">Combien de vies a un chat selon le dicton français ?</div>'
+            + '<div class="rl-bonusbar"><div class="rl-bbtn" id="bs-btn"><b>🕵️</b><small>espionner</small></div></div>'
+            + '<div class="rl-spybox" id="bs-box"><small>Réponses des autres équipes</small><div class="rl-spylist" id="bs-list"><b class="wait">…</b></div><span id="bs-sub">personne n\'a répondu</span></div>'
+            + keypadHtml('bsk')
+            + '</div>'
+            + '<div class="rl-bignum">👀<small>les réponses adverses</small></div></div>')
+          + el(3, 'Vous voyez <b>en direct</b> la réponse de chaque équipe… <b>dès qu\'elle a répondu</b>', 'rl-caption'),
+        async run(w) {
+          await w(1300); on('bs-btn', 'active'); $r('bs-btn').querySelector('small').textContent = 'en cours 👀'; on('bs-box');
+          const list = $r('bs-list');
+          const steps = [['Les Rapides', 9], ['Alpha', 7], ['Bravo', 7]];
+          for (let i = 0; i < steps.length; i++) {
+            await w(1200);
+            if (i === 0) list.innerHTML = '';
+            list.insertAdjacentHTML('beforeend', `<span class="rl-spychip">${steps[i][0]} <b>${steps[i][1]}</b></span>`);
+            $r('bs-sub').textContent = `${i + 1} équipe(s) sur 3`;
+          }
+          await w(900); on('bsk-7', 'sel');
+        }
+      },
+      {
+        html: () => head('L\'Espion', 'Espionner…<br>ou <span class="red">se faire piéger</span> ?')
+          + el(2, '<div class="rl-cards">'
+            + '<div class="rl-card pile" style="--k:0"><h3>⏳ Patience</h3><div class="rl-pts">🐢</div><div class="rl-formula">plus vous attendez, plus vous voyez de <b>réponses</b>… mais <b>adieu la rapidité</b></div></div>'
+            + '<div class="rl-card under" style="--k:1"><h3>📣 Démasqué</h3><div class="rl-pts">👀</div><div class="rl-formula">les équipes espionnées sont <b>prévenues</b> sur leur téléphone</div></div>'
+            + '<div class="rl-card over" style="--k:2"><h3>🎭 Intox</h3><div class="rl-pts">🤥</div><div class="rl-formula">les autres peuvent se tromper… <b>ou bluffer</b> !</div></div>'
+            + '</div>')
+          + el(3, 'Copier le leader… ou <b>s\'en méfier</b> ? 😉', 'rl-caption'),
+        run: null
+      }
+    ]
+  };
+
+  // Slides présentées avant une manche : le(s) nouveau(x) bonus, puis le récapitulatif
+  function bonusDeck(bonuses, newIds) {
+    const deck = [];
+    newIds.forEach(id => (BONUS_SLIDES[id] || []).forEach(s => deck.push(s)));
+    if (bonuses.length) {
+      deck.push({
+        html: () => head('Vos bonus pour cette manche', 'Chacun <span class="gold">1 fois</span> par manche')
+          + el(2, '<div class="rl-cards">' + bonuses.map((b, i) =>
+            `<div class="rl-card pile" style="--k:${i}"><h3>${b.name}</h3><div class="rl-pts">${b.icon}</div>`
+            + `<div class="rl-formula">${b.short}</div>${newIds.includes(b.id) ? '<div class="tiny">NOUVEAU</div>' : ''}</div>`).join('') + '</div>')
+          + el(3, 'Les bonus <b>se cumulent</b> d\'une manche à l\'autre', 'rl-caption'),
+        run: null
+      });
+    }
+    return deck;
+  }
+
+  // ======================================================================
   // NAVIGATION
   // ======================================================================
 
+  let deck = SLIDES;
+
   function buildDots() {
-    $r('rl-dots').innerHTML = SLIDES.map((_, i) => `<span class="rl-dot" id="rl-dot-${i}"></span>`).join('');
+    $r('rl-dots').innerHTML = deck.map((_, i) => `<span class="rl-dot" id="rl-dot-${i}"></span>`).join('');
   }
 
   function show(i) {
-    idx = Math.max(0, Math.min(SLIDES.length - 1, i));
+    idx = Math.max(0, Math.min(deck.length - 1, i));
     const run = ++token;
-    const s = SLIDES[idx];
+    const s = deck[idx];
     const stage = $r('rl-stage');
     stage.innerHTML = `<div class="rl-slide"><div class="rl-fit" id="rl-fit">${s.html()}</div></div>`;
     fitSlide();
-    SLIDES.forEach((_, k) => {
+    deck.forEach((_, k) => {
       const d = $r('rl-dot-' + k);
       d.className = 'rl-dot' + (k < idx ? ' done' : k === idx ? ' cur' : '');
     });
-    $r('rl-count').textContent = `${idx + 1} / ${SLIDES.length}`;
+    $r('rl-count').textContent = `${idx + 1} / ${deck.length}`;
     $r('rl-back').hidden = idx === 0;
-    const last = idx === SLIDES.length - 1;
+    const last = idx === deck.length - 1;
     $r('rl-next').textContent = last ? '✔ Terminer' : 'Suivant ▶';
     setTimeout(() => { if (run === token) fitSlide(); }, 1200);   // re-mesure une fois la slide posée
     if (s.run) s.run(waiter(run)).catch(e => { if (e !== CANCEL) console.error(e); });
@@ -298,13 +419,22 @@
   window.addEventListener('resize', () => { if (open) fitSlide(); });
 
   function rulesNext() {
-    if (idx >= SLIDES.length - 1) closeRules(); else show(idx + 1);
+    if (idx >= deck.length - 1) closeRules(); else show(idx + 1);
   }
   function rulesBack() { if (idx > 0) show(idx - 1); }
 
-  function openRules() {
+  function openRules() { openDeck(SLIDES); }
+
+  // Présentation des bonus d'une manche. bonuses : [{ id, icon, name, short }], newIds : ids nouveaux
+  function openBonuses(bonuses, newIds) {
+    const d = bonusDeck(bonuses || [], newIds || []);
+    if (d.length) openDeck(d);
+  }
+
+  function openDeck(d) {
     if (open) return;
     open = true;
+    deck = d;
     buildDots();
     $r('rules-overlay').classList.add('visible');
     show(0);
@@ -329,6 +459,7 @@
   });
 
   window.openRules = openRules;
+  window.openBonuses = openBonuses;
   window.closeRules = closeRules;
   window.rulesNext = rulesNext;
   window.rulesBack = rulesBack;
