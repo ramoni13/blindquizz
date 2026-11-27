@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Blind Quizz — Joueur</title>
+  <style>
+    :root {
+      --bg: linear-gradient(135deg, #0d1b4b 0%, #1a0a3c 50%, #0d1b4b 100%);
+      --gold: #ffd700;
+      --gold-dark: #b8860b;
+      --panel: rgba(255,255,255,0.08);
+      --border: rgba(255,255,255,0.15);
+      --white: #ffffff;
+      --muted: rgba(255,255,255,0.6);
+      --green: #00c853;
+      --red: #e53935;
+      --blue: #1565c0;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: var(--bg);
+      background-attachment: fixed;
+      color: var(--white);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+      padding-bottom: 32px;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .logo {
+      font-size: 1.4rem;
+      font-weight: 900;
+      color: var(--gold);
+      letter-spacing: 1px;
+      text-align: center;
+      margin-bottom: 14px;
+      text-shadow: 0 0 16px rgba(255,215,0,0.4);
+    }
+
+    .section { width: 100%; max-width: 480px; display: none; }
+    .section.active { display: block; }
+
+    .card {
+      width: 100%;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px 18px;
+      margin-bottom: 14px;
+    }
+    .card h2 { font-size: 1.1rem; color: var(--gold); margin-bottom: 16px; text-align: center; }
+
+    .field-label { font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; }
+
+    input[type="text"], select {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.1);
+      color: var(--white);
+      font-size: 1.1rem;
+      outline: none;
+      margin-bottom: 14px;
+      -webkit-appearance: none;
+    }
+    input::placeholder { color: var(--muted); }
+    select option { color: #000; background: #fff; }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 1px;
+      transition: opacity 0.15s, transform 0.1s;
+      text-align: center;
+    }
+    .btn:active { transform: scale(0.97); opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .btn-gold   { background: var(--gold); color: #000; }
+    .btn-green  { background: #2e7d32; color: #fff; }
+    .btn-danger { background: #c62828; color: #fff; }
+    .btn-secondary { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid var(--border); }
+
+    .error-msg { color: #ff5252; font-size: 0.88rem; text-align: center; margin-top: 10px; display: none; }
+
+    /* ── Bandeau d'équipe + cumul ── */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .team-badge {
+      display: inline-block;
+      background: rgba(255,215,0,0.15);
+      border: 1px solid rgba(255,215,0,0.4);
+      color: var(--gold);
+      font-weight: 700;
+      font-size: 0.95rem;
+      padding: 6px 14px;
+      border-radius: 20px;
+      max-width: 55%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .round-tag {
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .cumul-box {
+      text-align: center;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid rgba(255,215,0,0.35);
+      border-radius: 14px;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+    }
+    .cumul-label { font-size: 0.78rem; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+    .cumul-value { font-size: 2.2rem; font-weight: 900; color: var(--gold); line-height: 1.1; }
+    .cumul-value .cumul-target { color: var(--white); opacity: 0.7; font-size: 1.4rem; }
+    .cumul-hint { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+
+    /* ── Question ── */
+    .question-num {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: var(--gold);
+      background: rgba(255,215,0,0.1);
+      border: 1px solid rgba(255,215,0,0.3);
+      border-radius: 6px;
+      padding: 3px 10px;
+      margin-bottom: 8px;
+    }
+    .question-label { font-size: 1.2rem; font-weight: 700; line-height: 1.4; margin-bottom: 16px; }
+
+    /* ── Pavé numérique ── */
+    .keypad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .key {
+      padding: 18px 0;
+      border-radius: 14px;
+      border: 2px solid var(--border);
+      background: var(--panel);
+      color: var(--white);
+      font-size: 2rem;
+      font-weight: 900;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .key:active { transform: scale(0.94); }
+    .key.selected {
+      border-color: var(--gold);
+      background: rgba(255,215,0,0.25);
+      color: var(--gold);
+      box-shadow: 0 0 14px rgba(255,215,0,0.4);
+    }
+    .key.zero { grid-column: 2; }
+
+    .stop-btn {
+      margin-top: 14px;
+      background: linear-gradient(135deg, #e53935, #b71c1c);
+      border: 2px solid #ff5252;
+      color: #fff;
+      font-size: 1.3rem;
+      font-weight: 900;
+      letter-spacing: 3px;
+      padding: 16px;
+      box-shadow: 0 0 16px rgba(229,57,53,0.4);
+    }
+
+    /* ── Bannières d'état ── */
+    .phase-banner {
+      width: 100%;
+      text-align: center;
+      padding: 26px 20px;
+      border-radius: 16px;
+      margin-bottom: 14px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+    }
+    .phase-banner.answered { background: rgba(0,200,83,0.1); border-color: rgba(0,200,83,0.4); }
+    .phase-banner.stopped  { background: rgba(229,57,53,0.12); border-color: rgba(229,57,53,0.5); }
+    .phase-banner.watch    { background: rgba(255,215,0,0.08); border-color: rgba(255,215,0,0.3); }
+    .phase-icon { font-size: 3rem; margin-bottom: 10px; }
+    .phase-title { font-size: 1.3rem; font-weight: 700; color: var(--gold); margin-bottom: 6px; }
+    .phase-sub { font-size: 0.92rem; color: var(--muted); line-height: 1.5; }
+    .big-value { font-size: 3rem; font-weight: 900; color: var(--green); margin: 8px 0; }
+    .big-value.red { color: #ff5252; }
+    .big-value.gold { color: var(--gold); }
+
+    /* ── Modale ── */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-backdrop.visible { display: flex; }
+    .modal-box {
+      background: #1a1a3e;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 26px 20px;
+      width: 100%;
+      max-width: 400px;
+      text-align: center;
+    }
+    .modal-icon { font-size: 2.8rem; margin-bottom: 8px; }
+    .modal-title { font-size: 1.25rem; font-weight: 800; margin-bottom: 10px; }
+    .modal-msg { font-size: 0.95rem; color: var(--muted); line-height: 1.5; margin-bottom: 20px; }
+    .modal-actions { display: flex; gap: 10px; }
+    .modal-actions .btn { flex: 1; }
+
+    .spinner {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .leave-link {
+      display: block;
+      margin: 18px auto 0;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<div class="logo">🧠 Blind Quizz</div>
+
+<!-- ══════════ CONNEXION ══════════ -->
+<div id="section-join" class="section active">
+  <div class="card">
+    <h2>Rejoindre la partie</h2>
+    <div class="field-label">Code de la partie</div>
+    <input type="text" id="input-code" placeholder="EX : AB3K7F" maxlength="8" autocomplete="off"
+           style="text-transform:uppercase;text-align:center;font-size:1.8rem;letter-spacing:4px;">
+    <div class="field-label">Votre équipe</div>
+    <select id="select-team">
+      <option value="">— Choisissez votre équipe —</option>
+    </select>
+    <button class="btn btn-gold" id="btn-join" onclick="joinGame()">Rejoindre ▶</button>
+    <div id="join-error" class="error-msg"></div>
+  </div>
+</div>
+
+<!-- ══════════ JEU ══════════ -->
+<div id="section-game" class="section">
+  <div class="status-bar">
+    <span class="team-badge" id="team-badge"></span>
+    <span class="round-tag" id="round-tag"></span>
+  </div>
+
+  <div class="cumul-box" id="cumul-box" style="display:none;">
+    <div class="cumul-label">Cumul estimé</div>
+    <div class="cumul-value"><span id="cumul-value">0</span><span class="cumul-target"> / <span id="cumul-target">25</span></span></div>
+    <div class="cumul-hint" id="cumul-hint"></div>
+  </div>
+
+  <!-- Attente du démarrage -->
+  <div id="state-lobby" class="state" style="display:none;">
+    <div class="phase-banner">
+      <div class="phase-icon">⏳</div>
+      <div class="phase-title">Vous êtes connectés !</div>
+      <div class="phase-sub">L'animateur va bientôt lancer la partie…</div>
+    </div>
+  </div>
+
+  <!-- Regardez l'écran -->
+  <div id="state-watch" class="state" style="display:none;">
+    <div class="phase-banner watch">
+      <div class="phase-icon">👀</div>
+      <div class="phase-title" id="watch-title">Regardez l'écran !</div>
+      <div class="phase-sub" id="watch-sub"></div>
+    </div>
+  </div>
+
+  <!-- Saisie -->
+  <div id="state-answering" class="state" style="display:none;">
+    <div class="card">
+      <div class="question-num" id="question-num"></div>
+      <div class="question-label" id="question-label"></div>
+      <div class="keypad" id="keypad"></div>
+      <button class="btn btn-green" id="btn-submit" onclick="submitAnswer()" disabled>Choisissez un chiffre</button>
+      <div id="answer-error" class="error-msg"></div>
+    </div>
+    <button class="btn stop-btn" onclick="askStop()">✋ STOP</button>
+  </div>
+
+  <!-- Réponse envoyée -->
+  <div id="state-answered" class="state" style="display:none;">
+    <div class="phase-banner answered">
+      <div class="phase-icon">✅</div>
+      <div class="phase-title">Réponse envoyée</div>
+      <div class="big-value" id="answered-value"></div>
+      <div class="phase-sub" id="answered-sub">Attendez la question suivante…</div>
+    </div>
+  </div>
+
+  <!-- STOP -->
+  <div id="state-stopped" class="state" style="display:none;">
+    <div class="phase-banner stopped">
+      <div class="phase-icon">✋</div>
+      <div class="phase-title">Vous êtes arrêtés à</div>
+      <div class="big-value red" id="stopped-value"></div>
+      <div class="phase-sub">Votre manche est terminée.<br>Attendez la vérification sur l'écran.</div>
+    </div>
+  </div>
+
+  <!-- Équipe ajoutée en cours de manche -->
+  <div id="state-out" class="state" style="display:none;">
+    <div class="phase-banner">
+      <div class="phase-icon">🕐</div>
+      <div class="phase-title">Manche en cours</div>
+      <div class="phase-sub">Votre équipe entrera en jeu à la prochaine manche.</div>
+    </div>
+  </div>
+
+  <!-- Fin de manche -->
+  <div id="state-roundEnd" class="state" style="display:none;">
+    <div class="phase-banner watch">
+      <div class="phase-icon" id="roundend-icon">🏁</div>
+      <div class="phase-title" id="roundend-title">Fin de la manche</div>
+      <div class="phase-sub" id="roundend-detail"></div>
+      <div class="big-value gold" id="roundend-score"></div>
+      <div class="phase-sub" id="roundend-total"></div>
+    </div>
+  </div>
+
+  <!-- Finale -->
+  <div id="state-final" class="state" style="display:none;">
+    <div class="phase-banner watch">
+      <div class="phase-icon">🏆</div>
+      <div class="phase-title">Partie terminée !</div>
+      <div class="big-value gold" id="final-rank"></div>
+      <div class="phase-sub" id="final-total"></div>
+      <div class="phase-sub" style="margin-top:10px;">Regardez l'écran pour le podium.</div>
+    </div>
+  </div>
+
+  <button class="leave-link" onclick="askLeave()">Quitter / changer d'équipe</button>
+</div>
+
+<!-- ══════════ MODALE ══════════ -->
+<div class="modal-backdrop" id="modal">
+  <div class="modal-box">
+    <div class="modal-icon" id="modal-icon">✋</div>
+    <div class="modal-title" id="modal-title"></div>
+    <div class="modal-msg" id="modal-msg"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-danger" id="modal-ok">Confirmer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ======================================================================
+// ÉTAT LOCAL
+// ======================================================================
+
+const STORAGE_KEY = 'bq_player';
+
+let player = null;          // { teamId, teamName, playerId, code }
+let pollTimer = null;
+let currentKey = null;      // round-question pour détecter une nouvelle question
+let pendingValue = null;
+let sending = false;
+let lastState = null;
+
+// ======================================================================
+// UTILITAIRES
+// ======================================================================
+
+function genPlayerId() {
+  return 'p_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+function apiPost(url, data) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }).then(r => r.json()).catch(() => ({ error: 'Connexion au serveur impossible' }));
+}
+
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function hideError(id) {
+  document.getElementById(id).style.display = 'none';
+}
+
+function showSection(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', s.id === 'section-' + name));
+}
+
+function showState(name) {
+  document.querySelectorAll('.state').forEach(s => { s.style.display = s.id === 'state-' + name ? 'block' : 'none'; });
+}
+
+function setText(id, txt) {
+  document.getElementById(id).textContent = txt;
+}
+
+// ======================================================================
+// CONNEXION
+// ======================================================================
+
+async function loadTeams() {
+  try {
+    const res = await fetch('/api/state?view=player');
+    const data = await res.json();
+    const sess = data.session;
+    const select = document.getElementById('select-team');
+    const prev = select.value;
+    select.innerHTML = '<option value="">— Choisissez votre équipe —</option>';
+    if (!sess) {
+      select.innerHTML = '<option value="">Aucune partie en cours</option>';
+      return;
+    }
+    sess.teams.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name + (t.taken ? ' (déjà connectée)' : '');
+      opt.disabled = t.taken;
+      select.appendChild(opt);
+    });
+    if (prev) select.value = prev;
+  } catch (e) { /* serveur indisponible */ }
+}
+
+let teamsTimer = null;
+function startTeamsRefresh() {
+  stopTeamsRefresh();
+  loadTeams();
+  teamsTimer = setInterval(loadTeams, 3000);
+}
+function stopTeamsRefresh() {
+  clearInterval(teamsTimer);
+  teamsTimer = null;
+}
+
+async function joinGame() {
+  hideError('join-error');
+  const code = document.getElementById('input-code').value.trim().toUpperCase();
+  const teamId = document.getElementById('select-team').value;
+  if (!code) return showError('join-error', 'Entrez le code de la partie.');
+  if (!teamId) return showError('join-error', 'Choisissez votre équipe.');
+
+  const btn = document.getElementById('btn-join');
+  btn.disabled = true;
+  const playerId = genPlayerId();
+  const res = await apiPost('/api/join', { code, teamId, playerId });
+  btn.disabled = false;
+  if (res.error) { loadTeams(); return showError('join-error', res.error); }
+
+  player = { teamId, teamName: res.teamName, playerId, code };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(player));
+  enterGame();
+}
+
+function enterGame() {
+  stopTeamsRefresh();
+  showSection('game');
+  setText('team-badge', player.teamName);
+  showState('lobby');
+  startPolling();
+}
+
+function leaveGame(msg) {
+  clearInterval(pollTimer);
+  pollTimer = null;
+  player = null;
+  currentKey = null;
+  localStorage.removeItem(STORAGE_KEY);
+  closeModal();
+  showSection('join');
+  startTeamsRefresh();
+  if (msg) showError('join-error', msg);
+}
+
+function askLeave() {
+  openModal({
+    icon: '🚪',
+    title: 'Quitter la partie ?',
+    msg: 'Vous pourrez vous reconnecter, mais seulement si l\'animateur libère votre équipe.',
+    labelOk: 'Quitter',
+    onOk: () => leaveGame()
+  });
+}
+
+// ======================================================================
+// POLLING
+// ======================================================================
+
+function startPolling() {
+  clearInterval(pollTimer);
+  poll();
+  pollTimer = setInterval(poll, 800);
+}
+
+async function poll() {
+  if (!player) return;
+  try {
+    const url = '/api/state?view=player&teamId=' + encodeURIComponent(player.teamId)
+      + '&playerId=' + encodeURIComponent(player.playerId);
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!player) return;
+    if (!data.session) return leaveGame('La partie est terminée. Rejoignez la nouvelle partie.');
+    if (data.session.code !== player.code) return leaveGame('Une nouvelle partie a été créée. Rejoignez-la.');
+    if (!data.me) return leaveGame('Votre équipe a été supprimée par l\'animateur.');
+    if (!data.me.isMe) return leaveGame('Votre équipe a été libérée par l\'animateur.');
+    applyState(data.session, data.me);
+  } catch (e) { /* réseau, ignorer */ }
+}
+
+function applyState(sess, me) {
+  lastState = { sess, me };
+  if (me.name !== player.teamName) {
+    player.teamName = me.name;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(player));
+  }
+  setText('team-badge', me.name);
+  setText('round-tag', sess.phase === 'lobby' ? 'En attente' : `Manche ${sess.round + 1} / ${sess.roundCount}`);
+
+  // Cumul estimé
+  const showCumul = me.participant && ['intro', 'answering', 'verifying'].includes(sess.phase);
+  document.getElementById('cumul-box').style.display = showCumul ? 'block' : 'none';
+  if (showCumul) {
+    setText('cumul-value', me.estimated || 0);
+    setText('cumul-target', sess.target);
+    const left = sess.target - (me.estimated || 0);
+    setText('cumul-hint', me.stopped ? 'Arrêtés pour cette manche'
+      : left > 0 ? `Encore ${left} avant la cible (estimation)`
+      : left === 0 ? 'Pile sur la cible (estimation) !'
+      : `${-left} au-dessus de la cible (estimation)`);
+  }
+
+  switch (sess.phase) {
+    case 'lobby':
+      showState('lobby');
+      break;
+
+    case 'intro':
+      setText('watch-title', `Manche ${sess.round + 1}`);
+      setText('watch-sub', me.participant
+        ? `Objectif : approcher ${sess.target} sans le dépasser. Regardez l'écran !`
+        : 'Votre équipe entrera en jeu à la prochaine manche.');
+      showState('watch');
+      break;
+
+    case 'answering':
+      if (!me.participant) { showState('out'); break; }
+      if (me.stopped) {
+        setText('stopped-value', me.estimated);
+        showState('stopped');
+        break;
+      }
+      if (me.answered) {
+        setText('answered-value', me.answered.value);
+        setText('answered-sub', me.answered.forced
+          ? 'Temps écoulé : estimation 0 enregistrée par l\'animateur.'
+          : 'Attendez la question suivante…');
+        showState('answered');
+        break;
+      }
+      {
+        const key = sess.round + '-' + me.question.num;
+        if (key !== currentKey) {
+          currentKey = key;
+          renderQuestion(me.question);
+        }
+        showState('answering');
+      }
+      break;
+
+    case 'verifying':
+      setText('watch-title', 'Vérification en cours');
+      setText('watch-sub', me.participant
+        ? `Vous avez estimé ${me.estimated} sur ${me.answeredCount} question(s). Regardez l'écran !`
+        : 'Regardez l\'écran !');
+      showState('watch');
+      break;
+
+    case 'roundEnd': {
+      const r = me.roundResult;
+      if (r) {
+        setText('roundend-icon', r.over ? '💥' : r.exactTarget ? '🎯' : '🏁');
+        setText('roundend-title', r.over ? 'Dépassement !' : r.exactTarget ? 'Pile sur la cible !' : 'Fin de la manche');
+        setText('roundend-detail', `Jauge : ${r.cumul} / ${sess.target} · bilan de cible : ${r.adjust > 0 ? '+' : ''}${r.adjust}`);
+        setText('roundend-score', `${r.score > 0 ? '+' : ''}${r.score} pts`);
+      } else {
+        setText('roundend-icon', '🏁');
+        setText('roundend-title', 'Fin de la manche');
+        setText('roundend-detail', '');
+        setText('roundend-score', '');
+      }
+      setText('roundend-total', me.total !== undefined ? `Total : ${me.total} pts — ${rankLabel(me.rank)} sur ${me.teamCount}` : '');
+      showState('roundEnd');
+      break;
+    }
+
+    case 'final':
+      setText('final-rank', me.rank ? rankLabel(me.rank) : '');
+      setText('final-total', me.total !== undefined ? `${me.total} points` : '');
+      showState('final');
+      break;
+  }
+}
+
+function rankLabel(rank) {
+  return rank === 1 ? '1er' : rank + 'e';
+}
+
+// ======================================================================
+// QUESTION + PAVÉ NUMÉRIQUE
+// ======================================================================
+
+function renderQuestion(q) {
+  setText('question-num', `QUESTION ${q.num}`);
+  setText('question-label', q.text);
+  hideError('answer-error');
+  pendingValue = null;
+  const keys = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
+  document.getElementById('keypad').innerHTML = keys.map(k =>
+    `<button class="key${k === 0 ? ' zero' : ''}" data-v="${k}" onclick="selectKey(${k})">${k}</button>`
+  ).join('');
+  updateSubmit();
+}
+
+function selectKey(v) {
+  pendingValue = v;
+  document.querySelectorAll('.key').forEach(b => b.classList.toggle('selected', Number(b.dataset.v) === v));
+  updateSubmit();
+}
+
+function updateSubmit() {
+  const btn = document.getElementById('btn-submit');
+  btn.disabled = pendingValue === null || sending;
+  btn.textContent = pendingValue === null ? 'Choisissez un chiffre' : `✅ Valider « ${pendingValue} »`;
+}
+
+async function submitAnswer() {
+  if (pendingValue === null || sending) return;
+  sending = true;
+  updateSubmit();
+  const res = await apiPost('/api/answer', { teamId: player.teamId, playerId: player.playerId, value: pendingValue });
+  sending = false;
+  updateSubmit();
+  if (res.error) { showError('answer-error', res.error); poll(); return; }
+  setText('answered-value', pendingValue);
+  setText('answered-sub', 'Attendez la question suivante…');
+  setText('cumul-value', res.estimated);
+  showState('answered');
+  poll();
+}
+
+// ======================================================================
+// STOP
+// ======================================================================
+
+function askStop() {
+  const est = lastState && lastState.me ? lastState.me.estimated || 0 : 0;
+  openModal({
+    icon: '✋',
+    title: 'Arrêter définitivement pour cette manche ?',
+    msg: `Votre cumul estimé restera à ${est}. Cette question et les suivantes ne compteront pas. Ce choix est définitif.`,
+    labelOk: 'STOP',
+    onOk: doStop
+  });
+}
+
+async function doStop() {
+  const res = await apiPost('/api/stop', { teamId: player.teamId, playerId: player.playerId });
+  if (res.error) { showError('answer-error', res.error); poll(); return; }
+  setText('stopped-value', res.estimated);
+  showState('stopped');
+  poll();
+}
+
+// ======================================================================
+// MODALE
+// ======================================================================
+
+function openModal({ icon, title, msg, labelOk, onOk }) {
+  setText('modal-icon', icon);
+  setText('modal-title', title);
+  setText('modal-msg', msg);
+  const ok = document.getElementById('modal-ok');
+  ok.textContent = labelOk;
+  ok.onclick = () => { closeModal(); onOk(); };
+  document.getElementById('modal').classList.add('visible');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('visible');
+}
+
+// ======================================================================
+// INIT (reconnexion avec le même playerId)
+// ======================================================================
+
+(function init() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  if (code) document.getElementById('input-code').value = code.toUpperCase();
+
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (e) { saved = null; }
+
+  if (saved && saved.teamId && saved.playerId && saved.code && (!code || code.toUpperCase() === saved.code)) {
+    apiPost('/api/join', { code: saved.code, teamId: saved.teamId, playerId: saved.playerId }).then(res => {
+      if (res.error) {
+        localStorage.removeItem(STORAGE_KEY);
+        startTeamsRefresh();
+      } else {
+        player = { ...saved, teamName: res.teamName };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(player));
+        enterGame();
+      }
+    });
+  } else {
+    if (saved) localStorage.removeItem(STORAGE_KEY);
+    startTeamsRefresh();
+  }
+})();
+</script>
+</body>
+</html>

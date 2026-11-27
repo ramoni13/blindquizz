@@ -1,0 +1,12 @@
+{
+  "name": "blind-quizz",
+  "version": "1.0.0",
+  "description": "Blind Quizz — Jeu d'animation de réunion en temps réel",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
